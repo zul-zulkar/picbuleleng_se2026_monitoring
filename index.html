@@ -1,0 +1,938 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Monitoring Rekrutmen Petugas SE2026 – BPS Kab. Buleleng</title>
+
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+
+  <!-- PapaParse -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+
+  <!-- Font Awesome -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"/>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --blue-900: #1e3a5f;
+      --blue-700: #1d4ed8;
+      --blue-500: #3b82f6;
+      --blue-100: #dbeafe;
+      --green-500: #22c55e;
+      --green-100: #dcfce7;
+      --green-700: #15803d;
+      --orange-500: #f97316;
+      --orange-100: #fff7ed;
+      --purple-500: #a855f7;
+      --purple-100: #f3e8ff;
+      --gray-50:  #f8fafc;
+      --gray-100: #f1f5f9;
+      --gray-200: #e2e8f0;
+      --gray-300: #cbd5e1;
+      --gray-400: #94a3b8;
+      --gray-500: #64748b;
+      --gray-700: #374151;
+      --gray-800: #1e293b;
+      --shadow-sm: 0 1px 3px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.05);
+      --radius: 12px;
+    }
+
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: var(--gray-100);
+      color: var(--gray-800);
+      min-height: 100vh;
+    }
+
+    /* ── LOADING ─────────────────────────────── */
+    #loadingOverlay {
+      position: fixed; inset: 0; z-index: 9999;
+      background: rgba(255,255,255,.92);
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 14px;
+    }
+    .spinner {
+      width: 44px; height: 44px;
+      border: 4px solid var(--gray-200);
+      border-top-color: var(--blue-700);
+      border-radius: 50%;
+      animation: spin .75s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #loadingText { font-size: .85rem; color: var(--gray-500); font-weight: 500; }
+
+    /* ── HEADER ──────────────────────────────── */
+    .header {
+      background: linear-gradient(135deg, var(--blue-900) 0%, #1e56c4 100%);
+      color: white;
+      padding: 10px 16px;
+      position: sticky; top: 0; z-index: 900;
+      box-shadow: 0 2px 10px rgba(0,0,0,.25);
+    }
+    .header-inner {
+      max-width: 1440px; margin: 0 auto;
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    }
+    .header-logo {
+      display: flex; align-items: center; gap: 10px;
+    }
+    .header-logo-icon {
+      width: 36px; height: 36px; border-radius: 8px;
+      background: rgba(255,255,255,.15);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.1rem;
+    }
+    .header-title { font-size: .95rem; font-weight: 700; line-height: 1.2; }
+    .header-sub { font-size: .68rem; opacity: .75; margin-top: 2px; }
+    .header-right { text-align: right; flex-shrink: 0; }
+    .header-update { font-size: .65rem; opacity: .7; }
+    .btn-refresh {
+      margin-top: 5px;
+      background: rgba(255,255,255,.15);
+      border: 1px solid rgba(255,255,255,.3);
+      color: white; padding: 4px 12px;
+      border-radius: 99px; font-size: .7rem;
+      cursor: pointer; transition: background .2s;
+      display: inline-flex; align-items: center; gap: 5px;
+    }
+    .btn-refresh:hover { background: rgba(255,255,255,.25); }
+    .btn-refresh:disabled { opacity: .5; cursor: not-allowed; }
+
+    /* ── CONTAINER ───────────────────────────── */
+    .container {
+      max-width: 1440px; margin: 0 auto;
+      padding: 14px 14px 20px;
+    }
+
+    /* ── STAT CARDS ──────────────────────────── */
+    .cards-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px; margin-bottom: 12px;
+    }
+    @media (min-width: 640px) { .cards-grid { grid-template-columns: repeat(4, 1fr); } }
+
+    .card {
+      background: white; border-radius: var(--radius);
+      padding: 14px 16px; box-shadow: var(--shadow-sm);
+      display: flex; align-items: center; gap: 12px;
+      transition: box-shadow .2s;
+    }
+    .card:hover { box-shadow: 0 4px 12px rgba(0,0,0,.1); }
+    .card-icon {
+      width: 46px; height: 46px; border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.2rem; flex-shrink: 0;
+    }
+    .ci-blue   { background: var(--blue-100);   color: var(--blue-700); }
+    .ci-green  { background: var(--green-100);  color: var(--green-700); }
+    .ci-orange { background: var(--orange-100); color: #c2410c; }
+    .ci-purple { background: var(--purple-100); color: #7e22ce; }
+    .card-val { font-size: 1.65rem; font-weight: 800; line-height: 1; }
+    .card-lbl { font-size: .68rem; color: var(--gray-500); margin-top: 3px; }
+
+    /* ── FILTER BAR ──────────────────────────── */
+    .filter-bar {
+      background: white; border-radius: var(--radius);
+      padding: 10px 14px; box-shadow: var(--shadow-sm);
+      margin-bottom: 12px;
+      display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end;
+    }
+    .filter-group { display: flex; flex-direction: column; gap: 3px; }
+    .filter-group label {
+      font-size: .67rem; font-weight: 600; color: var(--gray-500);
+      text-transform: uppercase; letter-spacing: .04em;
+    }
+    .filter-group select, .filter-group input[type=text] {
+      border: 1.5px solid var(--gray-200); border-radius: 8px;
+      padding: 6px 10px; font-size: .78rem; color: var(--gray-800);
+      background: var(--gray-50); outline: none;
+      transition: border-color .2s, background .2s;
+      min-width: 150px;
+    }
+    .filter-group input[type=text] { min-width: 180px; }
+    .filter-group select:focus,
+    .filter-group input:focus {
+      border-color: var(--blue-500); background: white;
+    }
+    .filter-reset {
+      padding: 6px 14px; background: var(--gray-100);
+      border: 1.5px solid var(--gray-200); border-radius: 8px;
+      font-size: .75rem; color: var(--gray-500); cursor: pointer;
+      transition: all .2s; align-self: flex-end;
+    }
+    .filter-reset:hover { background: var(--gray-200); color: var(--gray-700); }
+    .filter-count {
+      margin-left: auto; align-self: flex-end;
+      font-size: .68rem; color: var(--gray-400); font-style: italic;
+    }
+
+    /* ── MAIN GRID ───────────────────────────── */
+    .main-grid {
+      display: grid; grid-template-columns: 1fr;
+      gap: 12px;
+    }
+    @media (min-width: 1024px) {
+      .main-grid { grid-template-columns: 3fr 2fr; align-items: start; }
+    }
+
+    /* ── PANEL BASE ──────────────────────────── */
+    .panel {
+      background: white; border-radius: var(--radius);
+      box-shadow: var(--shadow-sm); overflow: hidden;
+    }
+    .panel-hdr {
+      padding: 9px 14px;
+      background: var(--gray-50);
+      border-bottom: 1px solid var(--gray-100);
+      font-size: .78rem; font-weight: 600; color: var(--gray-700);
+      display: flex; align-items: center; gap: 6px;
+    }
+    .panel-hdr i { color: var(--blue-500); }
+
+    /* ── MAP ─────────────────────────────────── */
+    #map { height: 460px; }
+    @media (min-width: 1024px) { #map { height: 540px; } }
+
+    /* Map legend */
+    .map-legend {
+      background: white; padding: 8px 11px;
+      border-radius: 8px; font-size: .7rem;
+      box-shadow: 0 1px 5px rgba(0,0,0,.18); line-height: 1.8;
+    }
+    .map-legend strong { display: block; margin-bottom: 2px; font-size: .72rem; }
+    .leg-row { display: flex; align-items: center; gap: 6px; }
+    .leg-dot {
+      width: 14px; height: 14px; border-radius: 3px; flex-shrink: 0;
+    }
+
+    /* ── RIGHT PANEL ─────────────────────────── */
+    .right-panel { display: flex; flex-direction: column; gap: 12px; }
+
+    /* ── PROGRESS BAR ────────────────────────── */
+    .progress-wrap { padding: 6px 14px 10px; }
+    .progress-bg {
+      background: var(--gray-200); border-radius: 99px;
+      height: 10px; overflow: hidden;
+    }
+    .progress-fill {
+      background: linear-gradient(90deg, var(--blue-700), var(--green-500));
+      height: 100%; border-radius: 99px;
+      transition: width .6s cubic-bezier(.4,0,.2,1);
+    }
+    .progress-txt {
+      font-size: .65rem; color: var(--gray-400);
+      margin-top: 3px; text-align: right;
+    }
+
+    /* ── CHART ───────────────────────────────── */
+    .chart-wrap { padding: 10px 12px; height: 280px; position: relative; }
+
+    /* ── TABLE ───────────────────────────────── */
+    .tbl-scroll { overflow-x: auto; max-height: 300px; overflow-y: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: .72rem; }
+    thead th {
+      background: var(--gray-100); color: var(--gray-500);
+      font-weight: 600; padding: 7px 11px;
+      border-bottom: 1px solid var(--gray-200);
+      white-space: nowrap; position: sticky; top: 0; z-index: 1;
+      text-align: left;
+    }
+    tbody tr { border-bottom: 1px solid var(--gray-100); transition: background .15s; }
+    tbody tr:hover { background: var(--gray-50); }
+    tbody td { padding: 7px 11px; color: var(--gray-700); }
+    .tbl-no { color: var(--gray-300); }
+
+    .badge {
+      display: inline-block; padding: 2px 8px; border-radius: 99px;
+      font-size: .63rem; font-weight: 700; white-space: nowrap;
+    }
+    .badge-green  { background: var(--green-100);  color: var(--green-700); }
+    .badge-yellow { background: #fef9c3; color: #854d0e; }
+    .badge-gray   { background: var(--gray-100);   color: var(--gray-400); }
+
+    /* ── EMPTY STATE ─────────────────────────── */
+    .empty {
+      text-align: center; padding: 28px 16px;
+      color: var(--gray-400); font-size: .8rem;
+    }
+    .empty i { font-size: 1.8rem; display: block; margin-bottom: 8px; opacity: .5; }
+
+    /* ── POPUP ───────────────────────────────── */
+    .popup-title {
+      font-weight: 700; font-size: .88rem;
+      color: var(--blue-900); margin-bottom: 6px;
+    }
+    .popup-row {
+      display: flex; gap: 6px; margin-bottom: 3px;
+      font-size: .75rem;
+    }
+    .popup-lbl { color: var(--gray-400); min-width: 70px; flex-shrink: 0; }
+    .popup-val { color: var(--gray-800); font-weight: 500; word-break: break-word; }
+    .popup-badge {
+      margin-top: 8px; padding: 3px 10px; border-radius: 99px;
+      font-size: .68rem; font-weight: 700; display: inline-block;
+    }
+    .pb-submitted { background: var(--green-100); color: var(--green-700); }
+    .pb-pending   { background: #fef9c3; color: #854d0e; }
+
+    /* ── PILL BADGE (panel header) ───────────── */
+    .pill {
+      margin-left: auto; padding: 2px 9px; border-radius: 99px;
+      font-size: .65rem; font-weight: 700;
+      background: var(--blue-100); color: var(--blue-700);
+    }
+
+    /* ── TAB (table toggle) ──────────────────── */
+    .tab-bar {
+      display: flex; border-bottom: 1px solid var(--gray-100); background: var(--gray-50);
+    }
+    .tab-btn {
+      flex: 1; padding: 8px; font-size: .72rem; font-weight: 600;
+      border: none; background: transparent; cursor: pointer;
+      color: var(--gray-400); border-bottom: 2px solid transparent;
+      transition: all .2s;
+    }
+    .tab-btn.active { color: var(--blue-700); border-bottom-color: var(--blue-700); background: white; }
+
+    /* ── FOOTER ──────────────────────────────── */
+    .footer {
+      text-align: center; padding: 16px 12px;
+      font-size: .68rem; color: var(--gray-400);
+    }
+    .footer a { color: var(--blue-500); text-decoration: none; }
+    .footer a:hover { text-decoration: underline; }
+
+    /* Leaflet fix */
+    .leaflet-container { font-family: inherit; }
+  </style>
+</head>
+<body>
+
+<!-- Loading overlay -->
+<div id="loadingOverlay">
+  <div class="spinner"></div>
+  <div id="loadingText">Menginisialisasi dashboard...</div>
+</div>
+
+<!-- ── HEADER ─────────────────────────────────── -->
+<header class="header">
+  <div class="header-inner">
+    <div class="header-logo">
+      <div class="header-logo-icon"><i class="fas fa-chart-line"></i></div>
+      <div>
+        <div class="header-title">Monitoring Rekrutmen Petugas SE2026</div>
+        <div class="header-sub">BPS Kabupaten Buleleng &bull; Sensus Ekonomi 2026</div>
+      </div>
+    </div>
+    <div class="header-right">
+      <div class="header-update">
+        <i class="fas fa-clock" style="opacity:.6;margin-right:3px"></i>
+        Diperbarui: <span id="lastUpdate">–</span>
+      </div>
+      <button class="btn-refresh" id="btnRefresh" onclick="refreshData()">
+        <i class="fas fa-sync-alt" id="refreshIcon"></i> Refresh
+      </button>
+    </div>
+  </div>
+</header>
+
+<!-- ── MAIN ───────────────────────────────────── -->
+<main class="container">
+
+  <!-- Stat Cards -->
+  <div class="cards-grid">
+    <div class="card">
+      <div class="card-icon ci-blue"><i class="fas fa-map-marker-alt"></i></div>
+      <div>
+        <div class="card-val" id="statTotal">–</div>
+        <div class="card-lbl">Total Desa/Kel.</div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-icon ci-green"><i class="fas fa-check-circle"></i></div>
+      <div>
+        <div class="card-val" id="statDone">–</div>
+        <div class="card-lbl">Sudah Lapor</div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-icon ci-orange"><i class="fas fa-hourglass-half"></i></div>
+      <div>
+        <div class="card-val" id="statPending">–</div>
+        <div class="card-lbl">Belum Lapor</div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-icon ci-purple"><i class="fas fa-percent"></i></div>
+      <div>
+        <div class="card-val" id="statPct">–</div>
+        <div class="card-lbl">Persentase</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Filter Bar -->
+  <div class="filter-bar">
+    <div class="filter-group">
+      <label><i class="fas fa-map"></i> Kecamatan</label>
+      <select id="filterKec" onchange="applyFilters()">
+        <option value="">Semua Kecamatan</option>
+      </select>
+    </div>
+    <div class="filter-group">
+      <label><i class="fas fa-toggle-on"></i> Status</label>
+      <select id="filterStatus" onchange="applyFilters()">
+        <option value="">Semua Status</option>
+        <option value="submitted">Sudah Lapor</option>
+        <option value="pending">Belum Lapor</option>
+      </select>
+    </div>
+    <div class="filter-group">
+      <label><i class="fas fa-search"></i> Cari Desa</label>
+      <input type="text" id="searchInput" placeholder="Ketik nama desa…" oninput="applyFilters()">
+    </div>
+    <button class="filter-reset" onclick="resetFilters()">
+      <i class="fas fa-times-circle"></i> Reset
+    </button>
+    <div class="filter-count" id="filterCount"></div>
+  </div>
+
+  <!-- Main grid -->
+  <div class="main-grid">
+
+    <!-- ── MAP PANEL ── -->
+    <div class="panel">
+      <div class="panel-hdr">
+        <i class="fas fa-map"></i> Peta Sebaran Laporan
+        <span style="margin-left:auto;font-size:.63rem;color:var(--gray-400)">
+          <i class="fas fa-mouse-pointer"></i> Klik desa untuk detail
+        </span>
+      </div>
+      <div id="map"></div>
+    </div>
+
+    <!-- ── RIGHT PANEL ── -->
+    <div class="right-panel">
+
+      <!-- Progress + Chart -->
+      <div class="panel">
+        <div class="panel-hdr">
+          <i class="fas fa-chart-bar"></i> Progress per Kecamatan
+        </div>
+        <div class="progress-wrap">
+          <div class="progress-bg">
+            <div class="progress-fill" id="progressBar" style="width:0%"></div>
+          </div>
+          <div class="progress-txt" id="progressTxt">0 dari 0 desa (0%)</div>
+        </div>
+        <div class="chart-wrap">
+          <canvas id="kecChart"></canvas>
+        </div>
+      </div>
+
+      <!-- Table -->
+      <div class="panel">
+        <div class="panel-hdr">
+          <i class="fas fa-list-alt"></i> Daftar Laporan
+          <span class="pill" id="tableCount">0</span>
+        </div>
+        <div class="tab-bar">
+          <button class="tab-btn active" id="tabSubmitted" onclick="switchTab('submitted')">
+            <i class="fas fa-check-circle" style="color:var(--green-500)"></i> Sudah Lapor
+          </button>
+          <button class="tab-btn" id="tabPending" onclick="switchTab('pending')">
+            <i class="fas fa-hourglass-half" style="color:#f59e0b"></i> Belum Lapor
+          </button>
+        </div>
+        <div class="tbl-scroll">
+          <table>
+            <thead id="tableHead"></thead>
+            <tbody id="tableBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+    </div><!-- /right-panel -->
+  </div><!-- /main-grid -->
+
+  <div class="footer">
+    Dashboard Monitoring &bull; BPS Kabupaten Buleleng &bull; Sensus Ekonomi 2026 &bull;
+    Form: <a href="http://s.bps.go.id/picbuleleng_se2026" target="_blank">s.bps.go.id/picbuleleng_se2026</a>
+    &bull; Data diperbarui otomatis setiap 5 menit
+  </div>
+
+</main>
+
+<script>
+// ═══════════════════════════════════════════════════
+// CONFIG
+// ═══════════════════════════════════════════════════
+const SHEET_ID   = '1-gpHz8-_EwMC0Ps9IyeHg0s-tJsYEAwCxQhBAf5sO28';
+const SHEET_URL  = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv`;
+const GEOJSON    = 'peta/final_desa_5108_2025-1.geojson';
+const REFRESH_MS = 5 * 60 * 1000;
+
+// ═══════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════
+let submissions = [];   // valid sheet rows
+let geoData     = null; // FeatureCollection
+let map         = null;
+let geoLayer    = null;
+let barChart    = null;
+let activeTab   = 'submitted'; // 'submitted' | 'pending'
+let filters     = { kec: '', status: '', q: '' };
+
+// ═══════════════════════════════════════════════════
+// UTILS
+// ═══════════════════════════════════════════════════
+const pad6 = v => String(v || '').trim().padStart(6, '0');
+
+// Sheet iddesa is 6-char (kdkec+kddesa); GeoJSON is 10-char (5108+6)
+const fullId  = row  => '5108' + pad6(row.iddesa);
+const fmtTime = ts => {
+  if (!ts) return '–';
+  try {
+    const [d, t] = ts.split(' ');
+    if (!d) return ts;
+    const [dd, mm, yy] = d.split('/');
+    return `${dd}/${mm}/${yy} ${t || ''}`.trim();
+  } catch { return ts; }
+};
+const nowStr = () => new Date().toLocaleString('id-ID', {
+  day: '2-digit', month: '2-digit', year: 'numeric',
+  hour: '2-digit', minute: '2-digit', second: '2-digit'
+});
+const capitalize = s => s.toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+const shortKec   = s => capitalize(s.replace(/^KECAMATAN\s+/i, ''));
+
+// ═══════════════════════════════════════════════════
+// DATA FETCH
+// ═══════════════════════════════════════════════════
+function setLoadingText(t) {
+  const el = document.getElementById('loadingText');
+  if (el) el.textContent = t;
+}
+
+function hideLoading() {
+  const el = document.getElementById('loadingOverlay');
+  if (!el) return;
+  el.style.opacity = '0';
+  el.style.transition = 'opacity .3s';
+  setTimeout(() => el.remove(), 320);
+}
+
+async function fetchSheet() {
+  setLoadingText('Mengambil data formulir…');
+  return new Promise((res, rej) => {
+    Papa.parse(SHEET_URL, {
+      download: true, header: true, skipEmptyLines: true,
+      complete: r => {
+        const valid = r.data.filter(row => {
+          const ts  = (row['Timestamp'] || '').trim();
+          const id  = (row['iddesa']    || '').trim();
+          return ts && !id.includes('#') && id !== '' && id !== 'iddesa';
+        });
+        res(valid);
+      },
+      error: rej
+    });
+  });
+}
+
+async function fetchGeo() {
+  setLoadingText('Memuat peta desa…');
+  const r = await fetch(GEOJSON);
+  if (!r.ok) throw new Error('GeoJSON gagal dimuat: ' + r.status);
+  return r.json();
+}
+
+// ═══════════════════════════════════════════════════
+// MAP
+// ═══════════════════════════════════════════════════
+function initMap() {
+  map = L.map('map', { center: [-8.16, 115.08], zoom: 10, zoomControl: true });
+
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap contributors', maxZoom: 19
+  }).addTo(map);
+
+  // Legend
+  const leg = L.control({ position: 'bottomleft' });
+  leg.onAdd = () => {
+    const d = L.DomUtil.create('div', 'map-legend');
+    d.innerHTML = `
+      <strong>Keterangan</strong>
+      <div class="leg-row"><div class="leg-dot" style="background:#22c55e;border:1.5px solid #16a34a"></div> Sudah Lapor</div>
+      <div class="leg-row"><div class="leg-dot" style="background:#e2e8f0;border:1.5px solid #94a3b8"></div> Belum Lapor</div>`;
+    return d;
+  };
+  leg.addTo(map);
+}
+
+function renderMap() {
+  if (!geoData) return;
+  if (geoLayer) map.removeLayer(geoLayer);
+
+  const doneSet = new Set(submissions.map(r => fullId(r)));
+  const kecFlt  = filters.kec.toLowerCase();
+
+  geoLayer = L.geoJSON(geoData, {
+    style: f => {
+      const id    = f.properties.iddesa;
+      const kec   = (f.properties.nmkec || '').toLowerCase();
+      const done  = doneSet.has(id);
+      const focus = !kecFlt || kec === kecFlt;
+
+      return done ? {
+        fillColor: '#22c55e', fillOpacity: focus ? .72 : .25,
+        color: '#16a34a', weight: focus ? 1.2 : .6, opacity: focus ? 1 : .4
+      } : {
+        fillColor: '#e2e8f0', fillOpacity: focus ? .55 : .15,
+        color: '#94a3b8', weight: focus ? .8 : .4, opacity: focus ? .7 : .3
+      };
+    },
+    onEachFeature: (f, layer) => {
+      const { iddesa, nmdesa, nmkec } = f.properties;
+      const done = doneSet.has(iddesa);
+      const sub  = submissions.find(r => fullId(r) === iddesa);
+
+      layer.on('mouseover', function() {
+        this.setStyle({ weight: 2.5, fillOpacity: .9 });
+        this.bringToFront();
+      });
+      layer.on('mouseout', () => geoLayer.resetStyle(layer));
+      layer.on('click', e => {
+        let html = `
+          <div class="popup-title">${capitalize(nmdesa)}</div>
+          <div class="popup-row"><span class="popup-lbl">Kecamatan</span><span class="popup-val">${shortKec(nmkec)}</span></div>
+          <div class="popup-row"><span class="popup-lbl">Kode Desa</span><span class="popup-val">${iddesa}</span></div>`;
+        if (done && sub) {
+          html += `
+          <div class="popup-row"><span class="popup-lbl">Waktu</span><span class="popup-val">${fmtTime(sub['Timestamp'])}</span></div>
+          <div class="popup-row"><span class="popup-lbl">Penerima</span><span class="popup-val">${sub['Penerima di Desa'] || '–'}</span></div>
+          <div class="popup-row"><span class="popup-lbl">PIC Desa</span><span class="popup-val">${sub['PIC Desa'] || '–'}</span></div>
+          <div class="popup-row"><span class="popup-lbl">Pengirim</span><span class="popup-val">${sub['Pengirim (Nama Pegawai BPS)'] || '–'}</span></div>
+          <div><span class="popup-badge pb-submitted">✓ Sudah Lapor</span></div>`;
+        } else {
+          html += `<div><span class="popup-badge pb-pending">⏳ Belum Lapor</span></div>`;
+        }
+        L.popup({ maxWidth: 260 })
+          .setLatLng(e.latlng)
+          .setContent(`<div style="font-family:inherit">${html}</div>`)
+          .openOn(map);
+      });
+    }
+  }).addTo(map);
+
+  if (geoLayer.getBounds().isValid()) {
+    map.fitBounds(geoLayer.getBounds(), { padding: [8, 8] });
+  }
+}
+
+// ═══════════════════════════════════════════════════
+// CHART
+// ═══════════════════════════════════════════════════
+function renderChart() {
+  if (!geoData) return;
+
+  // Build kecamatan stats
+  const kecMap = {};
+  geoData.features.forEach(f => {
+    const kec = f.properties.nmkec || 'Lainnya';
+    if (!kecMap[kec]) kecMap[kec] = { total: 0, done: 0 };
+    kecMap[kec].total++;
+  });
+  const doneSet = new Set(submissions.map(r => fullId(r)));
+  geoData.features.forEach(f => {
+    const kec = f.properties.nmkec || 'Lainnya';
+    if (doneSet.has(f.properties.iddesa)) kecMap[kec].done++;
+  });
+
+  // Filter if needed
+  let entries = Object.entries(kecMap);
+  if (filters.kec) {
+    entries = entries.filter(([k]) => k.toLowerCase() === filters.kec);
+  }
+  // Sort by total desc
+  entries.sort((a, b) => b[1].total - a[1].total);
+
+  const labels  = entries.map(([k]) => shortKec(k));
+  const doneDat = entries.map(([, v]) => v.done);
+  const pendDat = entries.map(([, v]) => v.total - v.done);
+
+  const ctx = document.getElementById('kecChart').getContext('2d');
+  if (barChart) barChart.destroy();
+
+  barChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        { label: 'Sudah Lapor', data: doneDat, backgroundColor: '#22c55e', borderRadius: 4 },
+        { label: 'Belum Lapor', data: pendDat, backgroundColor: '#e2e8f0', borderRadius: 4 }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { labels: { font: { size: 10 }, boxWidth: 12, padding: 8 } },
+        tooltip: {
+          callbacks: {
+            label: ctx => {
+              const v = entries[ctx.dataIndex][1];
+              return ctx.datasetIndex === 0
+                ? ` Sudah: ${v.done}/${v.total} (${Math.round(v.done/v.total*100)}%)`
+                : ` Belum: ${v.total - v.done}`;
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          stacked: true,
+          ticks: { font: { size: 9 }, maxRotation: 40 },
+          grid: { display: false }
+        },
+        y: {
+          stacked: true, beginAtZero: true,
+          ticks: { font: { size: 9 }, precision: 0 },
+          grid: { color: '#f1f5f9' }
+        }
+      }
+    }
+  });
+}
+
+// ═══════════════════════════════════════════════════
+// STATS
+// ═══════════════════════════════════════════════════
+function renderStats() {
+  const total = geoData ? geoData.features.length : 0;
+  const done  = submissions.length;
+  const pend  = total - done;
+  const pct   = total > 0 ? Math.round(done / total * 100) : 0;
+
+  document.getElementById('statTotal').textContent   = total;
+  document.getElementById('statDone').textContent    = done;
+  document.getElementById('statPending').textContent = pend;
+  document.getElementById('statPct').textContent     = pct + '%';
+
+  document.getElementById('progressBar').style.width = pct + '%';
+  document.getElementById('progressTxt').textContent = `${done} dari ${total} desa (${pct}%)`;
+}
+
+// ═══════════════════════════════════════════════════
+// TABLE
+// ═══════════════════════════════════════════════════
+function switchTab(tab) {
+  activeTab = tab;
+  document.getElementById('tabSubmitted').classList.toggle('active', tab === 'submitted');
+  document.getElementById('tabPending').classList.toggle('active', tab === 'pending');
+  renderTable();
+}
+
+function renderTable() {
+  const thead = document.getElementById('tableHead');
+  const tbody = document.getElementById('tableBody');
+  const kecFlt = filters.kec.toLowerCase();
+  const q      = filters.q.toLowerCase();
+
+  if (activeTab === 'submitted') {
+    // ── SUBMITTED TAB ──
+    thead.innerHTML = `<tr>
+      <th>#</th><th>Waktu</th><th>Kecamatan</th>
+      <th>Desa/Kel.</th><th>Penerima</th><th>Pengirim</th>
+    </tr>`;
+
+    let rows = submissions.filter(r => {
+      const kec  = (r['namakec']  || '').toLowerCase();
+      const desa = (r['namadesa'] || '').toLowerCase();
+      const pen  = (r['Penerima di Desa'] || '').toLowerCase();
+      if (kecFlt && kec !== kecFlt) return false;
+      if (q && !desa.includes(q) && !kec.includes(q) && !pen.includes(q)) return false;
+      return true;
+    });
+
+    document.getElementById('tableCount').textContent = rows.length;
+
+    if (!rows.length) {
+      tbody.innerHTML = `<tr><td colspan="6" class="empty">
+        <i class="fas fa-inbox"></i>Belum ada laporan yang cocok dengan filter ini.</td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = rows.map((r, i) => `
+      <tr>
+        <td class="tbl-no">${i+1}</td>
+        <td style="white-space:nowrap">${fmtTime(r['Timestamp'])}</td>
+        <td>${shortKec(r['namakec'] || '–')}</td>
+        <td><strong>${capitalize(r['namadesa'] || '–')}</strong></td>
+        <td>${r['Penerima di Desa'] || '–'}</td>
+        <td>${r['Pengirim (Nama Pegawai BPS)'] || '–'}</td>
+      </tr>`).join('');
+
+  } else {
+    // ── PENDING TAB ──
+    thead.innerHTML = `<tr>
+      <th>#</th><th>Kecamatan</th><th>Desa/Kel.</th><th>Status</th>
+    </tr>`;
+
+    if (!geoData) return;
+    const doneSet = new Set(submissions.map(r => fullId(r)));
+
+    let pending = geoData.features.filter(f => {
+      if (doneSet.has(f.properties.iddesa)) return false;
+      const kec  = (f.properties.nmkec  || '').toLowerCase();
+      const desa = (f.properties.nmdesa || '').toLowerCase();
+      if (kecFlt && kec !== kecFlt) return false;
+      if (q && !desa.includes(q) && !kec.includes(q)) return false;
+      return true;
+    });
+
+    document.getElementById('tableCount').textContent = pending.length;
+
+    if (!pending.length) {
+      tbody.innerHTML = `<tr><td colspan="4" class="empty">
+        <i class="fas fa-check-circle" style="color:var(--green-500)"></i>
+        Semua desa sudah melapor!</td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = pending.map((f, i) => `
+      <tr>
+        <td class="tbl-no">${i+1}</td>
+        <td>${shortKec(f.properties.nmkec || '–')}</td>
+        <td><strong>${capitalize(f.properties.nmdesa || '–')}</strong></td>
+        <td><span class="badge badge-yellow">Belum Lapor</span></td>
+      </tr>`).join('');
+  }
+}
+
+// ═══════════════════════════════════════════════════
+// FILTERS
+// ═══════════════════════════════════════════════════
+function populateKecFilter() {
+  if (!geoData) return;
+  const set = new Set();
+  geoData.features.forEach(f => { if (f.properties.nmkec) set.add(f.properties.nmkec); });
+  const sel = document.getElementById('filterKec');
+  // Clear existing options except first
+  while (sel.options.length > 1) sel.remove(1);
+  [...set].sort().forEach(kec => {
+    const o = document.createElement('option');
+    o.value = kec.toLowerCase();
+    o.textContent = shortKec(kec);
+    sel.appendChild(o);
+  });
+}
+
+function applyFilters() {
+  filters.kec    = document.getElementById('filterKec').value.toLowerCase();
+  filters.status = document.getElementById('filterStatus').value;
+  filters.q      = document.getElementById('searchInput').value.toLowerCase();
+
+  // Sync tab with status filter
+  if (filters.status === 'submitted' && activeTab !== 'submitted') switchTab('submitted');
+  if (filters.status === 'pending'   && activeTab !== 'pending')   switchTab('pending');
+
+  // Filter count hint
+  const kecFeatCount = geoData
+    ? geoData.features.filter(f =>
+        !filters.kec || (f.properties.nmkec || '').toLowerCase() === filters.kec
+      ).length
+    : 0;
+  document.getElementById('filterCount').textContent =
+    filters.kec ? `${kecFeatCount} desa di kecamatan ini` : '';
+
+  renderTable();
+  renderChart();
+  renderMap();
+}
+
+function resetFilters() {
+  document.getElementById('filterKec').value    = '';
+  document.getElementById('filterStatus').value = '';
+  document.getElementById('searchInput').value  = '';
+  filters = { kec: '', status: '', q: '' };
+  document.getElementById('filterCount').textContent = '';
+  renderTable();
+  renderChart();
+  renderMap();
+}
+
+// ═══════════════════════════════════════════════════
+// REFRESH
+// ═══════════════════════════════════════════════════
+async function refreshData() {
+  const btn  = document.getElementById('btnRefresh');
+  const icon = document.getElementById('refreshIcon');
+  btn.disabled = true;
+  icon.classList.add('fa-spin');
+  try {
+    submissions = await fetchSheet();
+    renderStats();
+    renderMap();
+    renderChart();
+    renderTable();
+    document.getElementById('lastUpdate').textContent = nowStr();
+  } catch (e) {
+    console.error('Refresh error:', e);
+  } finally {
+    btn.disabled = false;
+    icon.classList.remove('fa-spin');
+  }
+}
+
+// ═══════════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════════
+async function init() {
+  try {
+    initMap();
+
+    const [subs, geo] = await Promise.all([fetchSheet(), fetchGeo()]);
+    submissions = subs;
+    geoData     = geo;
+
+    renderStats();
+    populateKecFilter();
+    renderMap();
+    renderChart();
+    renderTable();
+
+    document.getElementById('lastUpdate').textContent = nowStr();
+    hideLoading();
+
+    // Auto-refresh (sheets only, GeoJSON stays in memory)
+    setInterval(async () => {
+      try {
+        submissions = await fetchSheet();
+        renderStats();
+        renderMap();
+        renderChart();
+        renderTable();
+        document.getElementById('lastUpdate').textContent = nowStr();
+      } catch (e) { console.error('Auto-refresh error:', e); }
+    }, REFRESH_MS);
+
+  } catch (err) {
+    console.error('Init error:', err);
+    setLoadingText('⚠️ Gagal memuat: ' + err.message +
+      '. Jalankan via HTTP server (misal: npx serve .)');
+  }
+}
+
+document.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>
