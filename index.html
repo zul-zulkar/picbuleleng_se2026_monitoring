@@ -199,8 +199,19 @@
     .panel-hdr i { color: var(--blue-500); }
 
     /* ── MAP ─────────────────────────────────── */
-    #map { height: 460px; }
-    @media (min-width: 1024px) { #map { height: 540px; } }
+    /* Mobile: isi sisa tinggi layar setelah header (±56px) */
+    #map {
+      height: calc(100svh - 56px);
+      min-height: 300px;
+      max-height: 520px;
+    }
+    /* Tablet ke atas: tinggi tetap, tidak perlu memenuhi layar */
+    @media (min-width: 640px) {
+      #map { height: 480px; max-height: none; }
+    }
+    @media (min-width: 1024px) {
+      #map { height: 540px; }
+    }
 
     /* Map legend */
     .map-legend {
