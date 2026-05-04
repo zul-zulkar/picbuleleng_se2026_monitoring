@@ -12,6 +12,9 @@
   <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 
+  <!-- PapaParse -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+
   <!-- Font Awesome -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"/>
 
@@ -540,21 +543,33 @@ function hideLoading() {
   setTimeout(() => el.remove(), 320);
 }
 
-// Gunakan JSONP (Google Visualization API) agar tidak ada CORS issue
-// dari GitHub Pages maupun file:// lokal.
-function fetchSheet() {
-  setLoadingText('Mengambil data formulir…');
+// Metode 1: fetch langsung ke export?format=csv (CORS didukung untuk sheet publik)
+async function fetchSheetCSV() {
+  const url  = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv`;
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  const text = await resp.text();
+  const { data } = Papa.parse(text, {
+    header: true, skipEmptyLines: true,
+    transformHeader: h => h.trim()
+  });
+  return data.filter(r => {
+    const ts = (r['Timestamp'] || '').trim();
+    return ts.length > 4 && !ts.startsWith('#');
+  });
+}
+
+// Metode 2: JSONP via Google Visualization API (fallback jika CORS gagal)
+function fetchSheetJSONP() {
   return new Promise((resolve, reject) => {
     const cbName = '_gviz_' + Date.now();
     const script  = document.createElement('script');
-
-    const timer = setTimeout(() => {
-      cleanup(); reject(new Error('Timeout mengambil data sheet'));
-    }, 15000);
+    const timer   = setTimeout(() => {
+      cleanup(); reject(new Error('Timeout JSONP — pastikan sheet sudah di-publish ke web'));
+    }, 12000);
 
     function cleanup() {
-      clearTimeout(timer);
-      delete window[cbName];
+      clearTimeout(timer); delete window[cbName];
       if (script.parentNode) script.remove();
     }
 
@@ -562,30 +577,40 @@ function fetchSheet() {
       cleanup();
       try {
         const cols = data.table.cols.map(c => c.label.trim());
-        const rows = data.table.rows.map(row => {
-          const obj = {};
-          (row.c || []).forEach((cell, i) => {
-            const key = cols[i] || ('col' + i);
-            // Prefer formatted value (f): menjaga leading-zero dan format tanggal
-            obj[key] = cell != null
-              ? String(cell.f != null ? cell.f : (cell.v != null ? cell.v : ''))
-              : '';
+        const valid = data.table.rows
+          .map(row => {
+            const obj = {};
+            (row.c || []).forEach((cell, i) => {
+              obj[cols[i] || 'col' + i] = cell != null
+                ? String(cell.f != null ? cell.f : (cell.v != null ? cell.v : ''))
+                : '';
+            });
+            return obj;
+          })
+          .filter(r => {
+            const ts = (r['Timestamp'] || '').trim();
+            return ts.length > 4 && !ts.startsWith('#') && ts !== 'null';
           });
-          return obj;
-        });
-        // Baris valid: punya Timestamp yang bukan error/kosong
-        const valid = rows.filter(r => {
-          const ts = (r['Timestamp'] || '').trim();
-          return ts.length > 4 && !ts.startsWith('#') && ts !== 'null';
-        });
         resolve(valid);
       } catch (e) { reject(e); }
     };
 
-    script.onerror = () => { cleanup(); reject(new Error('Gagal load script gviz')); };
+    script.onerror = () => { cleanup(); reject(new Error('Script gviz gagal dimuat')); };
     script.src = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json&callback=${cbName}`;
     document.head.appendChild(script);
   });
+}
+
+// Coba CSV fetch dulu, fallback ke JSONP
+async function fetchSheet() {
+  setLoadingText('Mengambil data formulir…');
+  try {
+    return await fetchSheetCSV();
+  } catch (err) {
+    console.warn('CSV fetch gagal, mencoba JSONP…', err.message);
+    setLoadingText('Mencoba metode alternatif…');
+    return fetchSheetJSONP();
+  }
 }
 
 async function fetchGeo() {
