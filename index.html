@@ -495,10 +495,19 @@ let filters     = { kec: '', status: '', q: '' };
 // ═══════════════════════════════════════════════════
 // UTILS
 // ═══════════════════════════════════════════════════
+const pad3 = v => String(v || '').trim().padStart(3, '0');
 const pad6 = v => String(v || '').trim().padStart(6, '0');
 
-// Sheet iddesa is 6-char (kdkec+kddesa); GeoJSON is 10-char (5108+6)
-const fullId  = row  => '5108' + pad6(row.iddesa);
+// Sheet iddesa = 6-char (kdkec+kddesa); GeoJSON iddesa = 10-char (5108+6).
+// Fallback: konstruksi dari kdkec+kddesa jika kolom iddesa kosong/N/A.
+const fullId = row => {
+  const raw = String(row['iddesa'] || '').trim();
+  if (raw && !raw.startsWith('#') && raw !== '') return '5108' + pad6(raw);
+  const kec  = String(row['kdkec']  || '').trim().replace(/\D/g, '');
+  const desa = String(row['kddesa'] || '').trim().replace(/\D/g, '');
+  if (kec && desa) return '5108' + pad3(kec) + pad3(desa);
+  return '';
+};
 const fmtTime = ts => {
   if (!ts) return '–';
   try {
@@ -536,11 +545,13 @@ async function fetchSheet() {
   return new Promise((res, rej) => {
     Papa.parse(SHEET_URL, {
       download: true, header: true, skipEmptyLines: true,
+      transformHeader: h => h.trim(), // strip whitespace from column names
       complete: r => {
         const valid = r.data.filter(row => {
           const ts  = (row['Timestamp'] || '').trim();
-          const id  = (row['iddesa']    || '').trim();
-          return ts && !id.includes('#') && id !== '' && id !== 'iddesa';
+          // iddesa bisa kosong/N/A jika baris form belum terisi
+          const ts2 = ts && ts.length > 4 && !ts.startsWith('#');
+          return ts2;
         });
         res(valid);
       },
@@ -562,8 +573,18 @@ async function fetchGeo() {
 function initMap() {
   map = L.map('map', { center: [-8.16, 115.08], zoom: 10, zoomControl: true });
 
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '© OpenStreetMap contributors', maxZoom: 19
+  // Minimalist base — tile tanpa label agar warna desa lebih menonjol
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png', {
+    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> © <a href="https://carto.com/">CARTO</a>',
+    subdomains: 'abcd', maxZoom: 19
+  }).addTo(map);
+
+  // Label layer dirender di atas GeoJSON
+  const labelPane = map.createPane('labels');
+  labelPane.style.zIndex = 650;
+  labelPane.style.pointerEvents = 'none';
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png', {
+    subdomains: 'abcd', maxZoom: 19, pane: 'labels'
   }).addTo(map);
 
   // Legend
@@ -583,31 +604,34 @@ function renderMap() {
   if (!geoData) return;
   if (geoLayer) map.removeLayer(geoLayer);
 
-  const doneSet = new Set(submissions.map(r => fullId(r)));
+  const doneSet = new Set(submissions.map(r => fullId(r)).filter(Boolean));
   const kecFlt  = filters.kec.toLowerCase();
 
   geoLayer = L.geoJSON(geoData, {
     style: f => {
-      const id    = f.properties.iddesa;
+      const id    = String(f.properties.iddesa);
       const kec   = (f.properties.nmkec || '').toLowerCase();
       const done  = doneSet.has(id);
       const focus = !kecFlt || kec === kecFlt;
 
       return done ? {
-        fillColor: '#22c55e', fillOpacity: focus ? .72 : .25,
-        color: '#16a34a', weight: focus ? 1.2 : .6, opacity: focus ? 1 : .4
+        fillColor: '#16a34a', fillOpacity: focus ? .82 : .35,
+        color: '#fff',       weight: focus ? 2 : 1, opacity: 1
       } : {
-        fillColor: '#e2e8f0', fillOpacity: focus ? .55 : .15,
-        color: '#94a3b8', weight: focus ? .8 : .4, opacity: focus ? .7 : .3
+        fillColor: '#cbd5e1', fillOpacity: focus ? .45 : .12,
+        color: '#94a3b8',    weight: focus ? .7 : .3, opacity: focus ? .6 : .25
       };
     },
     onEachFeature: (f, layer) => {
-      const { iddesa, nmdesa, nmkec } = f.properties;
+      const iddesa = String(f.properties.iddesa);
+      const { nmdesa, nmkec } = f.properties;
       const done = doneSet.has(iddesa);
       const sub  = submissions.find(r => fullId(r) === iddesa);
 
       layer.on('mouseover', function() {
-        this.setStyle({ weight: 2.5, fillOpacity: .9 });
+        this.setStyle(done
+          ? { weight: 3, fillOpacity: .95, color: '#fff' }
+          : { weight: 1.5, fillOpacity: .65 });
         this.bringToFront();
       });
       layer.on('mouseout', () => geoLayer.resetStyle(layer));
