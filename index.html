@@ -506,19 +506,20 @@ let filters     = { kec: '', status: '', q: '' };
 // ═══════════════════════════════════════════════════
 // UTILS
 // ═══════════════════════════════════════════════════
+const KDPROV_KAB       = '5108'; // kode provinsi+kabupaten Buleleng
 const digitsOnly       = v  => String(v || '').replace(/\D/g, '');
 const pad3             = v  => digitsOnly(v).padStart(3, '0');
 const pad6             = v  => digitsOnly(v).padStart(6, '0');
 const isValidTimestamp = ts => ts.length > 4 && !ts.startsWith('#') && ts !== 'null';
 
-// Sheet iddesa = 6-char (kdkec+kddesa); GeoJSON iddesa = 10-char (5108+6).
+// Sheet iddesa = 6-char (kdkec+kddesa); GeoJSON iddesa = 10-char (KDPROV_KAB+6).
 // Strip non-digit dulu agar handle "60,002" (locale) dan angka tanpa leading zero.
 const fullId = row => {
   const raw = digitsOnly(row['iddesa']);
   if (raw.length === 10) return raw;
-  if (raw.length  >  0)  return '5108' + pad6(raw);
+  if (raw.length  >  0)  return KDPROV_KAB + pad6(raw);
   const kec = pad3(row['kdkec']), desa = pad3(row['kddesa']);
-  if (kec !== '000' && desa !== '000') return '5108' + kec + desa;
+  if (kec !== '000' && desa !== '000') return KDPROV_KAB + kec + desa;
   return '';
 };
 const fmtTime = ts => {
@@ -657,16 +658,15 @@ function initMap() {
   leg.addTo(map);
 }
 
-// Derived from module-level doneSet + filters.kec — called by setStyle and onEachFeature
 function featureStyle(f) {
   const done  = doneSet.has(String(f.properties.iddesa));
   const focus = !filters.kec || (f.properties.nmkec || '').toLowerCase() === filters.kec;
-  return done ? {
-    fillColor: '#16a34a', fillOpacity: focus ? .82 : .35,
-    color: '#fff',        weight: focus ? 2 : 1, opacity: 1
-  } : {
-    fillColor: '#cbd5e1', fillOpacity: focus ? .45 : .12,
-    color: '#94a3b8',     weight: focus ? .7 : .3, opacity: focus ? .6 : .25
+  return {
+    fillColor:   done ? '#16a34a' : '#cbd5e1',
+    fillOpacity: done ? (focus ? .82 : .35) : (focus ? .45 : .12),
+    color:       done ? '#fff'    : '#94a3b8',
+    weight:      done ? (focus ? 2 : 1)    : (focus ? .7 : .3),
+    opacity:     done ? 1 : (focus ? .6 : .25),
   };
 }
 
@@ -692,7 +692,6 @@ function renderMap() {
       // Use featureStyle(f) so mouseout respects current filter state
       layer.on('mouseout', () => layer.setStyle(featureStyle(f)));
       layer.on('click', e => {
-        // Read live state at click time (not stale closure from build time)
         const done = doneSet.has(iddesa);
         const sub  = submissions.find(r => fullId(r) === iddesa);
         let html = `
@@ -933,9 +932,9 @@ function applyFilters() {
   document.getElementById('filterCount').textContent =
     filters.kec ? `${kecFeatCount} desa di kecamatan ini` : '';
 
-  renderTable();
-  renderChart();
   renderMap();
+  renderChart();
+  renderTable();
 }
 
 function resetFilters() {
@@ -944,9 +943,9 @@ function resetFilters() {
   document.getElementById('searchInput').value  = '';
   filters = { kec: '', status: '', q: '' };
   document.getElementById('filterCount').textContent = '';
-  renderTable();
-  renderChart();
   renderMap();
+  renderChart();
+  renderTable();
 }
 
 // ═══════════════════════════════════════════════════
