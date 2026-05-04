@@ -73,7 +73,7 @@
     .header {
       background: linear-gradient(135deg, var(--blue-900) 0%, #1e56c4 100%);
       color: white;
-      padding: 10px 16px;
+      padding: 10px var(--px);
       position: sticky; top: 0; z-index: 900;
       box-shadow: 0 2px 10px rgba(0,0,0,.25);
     }
@@ -107,9 +107,11 @@
     .btn-refresh:disabled { opacity: .5; cursor: not-allowed; }
 
     /* ── CONTAINER ───────────────────────────── */
+    /* --px: satu-satunya sumber horizontal spacing, dipakai header + container */
+    :root { --px: 16px; }
     .container {
       max-width: 1440px; margin: 0 auto;
-      padding: 14px 14px 20px;
+      padding: 14px var(--px) 24px;
     }
 
     /* ── STAT CARDS ──────────────────────────── */
@@ -316,7 +318,7 @@
 
     /* ── FOOTER ──────────────────────────────── */
     .footer {
-      text-align: center; padding: 16px 12px;
+      text-align: center; padding: 16px var(--px);
       font-size: .68rem; color: var(--gray-400);
     }
     .footer a { color: var(--blue-500); text-decoration: none; }
