@@ -494,31 +494,30 @@ const REFRESH_MS = 5 * 60 * 1000;
 // ═══════════════════════════════════════════════════
 // STATE
 // ═══════════════════════════════════════════════════
-let submissions = [];   // valid sheet rows
-let geoData     = null; // FeatureCollection
+let submissions = [];
+let geoData     = null;
+let doneSet     = new Set(); // module-level, updated before every render
 let map         = null;
 let geoLayer    = null;
 let barChart    = null;
-let activeTab   = 'submitted'; // 'submitted' | 'pending'
+let activeTab   = 'submitted';
 let filters     = { kec: '', status: '', q: '' };
 
 // ═══════════════════════════════════════════════════
 // UTILS
 // ═══════════════════════════════════════════════════
-const digitsOnly = v => String(v || '').replace(/\D/g, '');
-const pad3 = v => digitsOnly(v).padStart(3, '0');
-const pad6 = v => digitsOnly(v).padStart(6, '0');
+const digitsOnly       = v  => String(v || '').replace(/\D/g, '');
+const pad3             = v  => digitsOnly(v).padStart(3, '0');
+const pad6             = v  => digitsOnly(v).padStart(6, '0');
+const isValidTimestamp = ts => ts.length > 4 && !ts.startsWith('#') && ts !== 'null';
 
 // Sheet iddesa = 6-char (kdkec+kddesa); GeoJSON iddesa = 10-char (5108+6).
-// Strip semua non-digit dulu (handle format "60,002" dari locale Indonesia).
-// Jika sudah 10 digit → langsung pakai; jika 6 digit → prepend "5108";
-// Fallback → rakitkdkec+kddesa.
+// Strip non-digit dulu agar handle "60,002" (locale) dan angka tanpa leading zero.
 const fullId = row => {
-  const id = digitsOnly(row['iddesa'] || '');
-  if (id.length === 10) return id;
-  if (id.length > 0)    return '5108' + id.padStart(6, '0');
-  const kec  = pad3(row['kdkec']  || '');
-  const desa = pad3(row['kddesa'] || '');
+  const raw = digitsOnly(row['iddesa']);
+  if (raw.length === 10) return raw;
+  if (raw.length  >  0)  return '5108' + pad6(raw);
+  const kec = pad3(row['kdkec']), desa = pad3(row['kddesa']);
   if (kec !== '000' && desa !== '000') return '5108' + kec + desa;
   return '';
 };
@@ -564,10 +563,7 @@ async function fetchSheetCSV() {
     header: true, skipEmptyLines: true,
     transformHeader: h => h.trim()
   });
-  return data.filter(r => {
-    const ts = (r['Timestamp'] || '').trim();
-    return ts.length > 4 && !ts.startsWith('#');
-  });
+  return data.filter(r => isValidTimestamp((r['Timestamp'] || '').trim()));
 }
 
 // Metode 2: JSONP via Google Visualization API (fallback jika CORS gagal)
@@ -598,10 +594,7 @@ function fetchSheetJSONP() {
             });
             return obj;
           })
-          .filter(r => {
-            const ts = (r['Timestamp'] || '').trim();
-            return ts.length > 4 && !ts.startsWith('#') && ts !== 'null';
-          });
+          .filter(r => isValidTimestamp((r['Timestamp'] || '').trim()));
         resolve(valid);
       } catch (e) { reject(e); }
     };
@@ -664,42 +657,44 @@ function initMap() {
   leg.addTo(map);
 }
 
+// Derived from module-level doneSet + filters.kec — called by setStyle and onEachFeature
+function featureStyle(f) {
+  const done  = doneSet.has(String(f.properties.iddesa));
+  const focus = !filters.kec || (f.properties.nmkec || '').toLowerCase() === filters.kec;
+  return done ? {
+    fillColor: '#16a34a', fillOpacity: focus ? .82 : .35,
+    color: '#fff',        weight: focus ? 2 : 1, opacity: 1
+  } : {
+    fillColor: '#cbd5e1', fillOpacity: focus ? .45 : .12,
+    color: '#94a3b8',     weight: focus ? .7 : .3, opacity: focus ? .6 : .25
+  };
+}
+
 function renderMap() {
   if (!geoData) return;
-  if (geoLayer) map.removeLayer(geoLayer);
+  doneSet = new Set(submissions.map(r => fullId(r)).filter(Boolean));
 
-  const doneSet = new Set(submissions.map(r => fullId(r)).filter(Boolean));
-  const kecFlt  = filters.kec.toLowerCase();
+  // After first build, just restyle — avoids destroying/recreating 148 features
+  if (geoLayer) { geoLayer.setStyle(featureStyle); return; }
 
   geoLayer = L.geoJSON(geoData, {
-    style: f => {
-      const id    = String(f.properties.iddesa);
-      const kec   = (f.properties.nmkec || '').toLowerCase();
-      const done  = doneSet.has(id);
-      const focus = !kecFlt || kec === kecFlt;
-
-      return done ? {
-        fillColor: '#16a34a', fillOpacity: focus ? .82 : .35,
-        color: '#fff',       weight: focus ? 2 : 1, opacity: 1
-      } : {
-        fillColor: '#cbd5e1', fillOpacity: focus ? .45 : .12,
-        color: '#94a3b8',    weight: focus ? .7 : .3, opacity: focus ? .6 : .25
-      };
-    },
+    style: featureStyle,
     onEachFeature: (f, layer) => {
       const iddesa = String(f.properties.iddesa);
       const { nmdesa, nmkec } = f.properties;
-      const done = doneSet.has(iddesa);
-      const sub  = submissions.find(r => fullId(r) === iddesa);
 
       layer.on('mouseover', function() {
-        this.setStyle(done
-          ? { weight: 3, fillOpacity: .95, color: '#fff' }
-          : { weight: 1.5, fillOpacity: .65 });
+        const done = doneSet.has(iddesa);
+        this.setStyle(done ? { weight: 3, fillOpacity: .95, color: '#fff' }
+                           : { weight: 1.5, fillOpacity: .65 });
         this.bringToFront();
       });
-      layer.on('mouseout', () => geoLayer.resetStyle(layer));
+      // Use featureStyle(f) so mouseout respects current filter state
+      layer.on('mouseout', () => layer.setStyle(featureStyle(f)));
       layer.on('click', e => {
+        // Read live state at click time (not stale closure from build time)
+        const done = doneSet.has(iddesa);
+        const sub  = submissions.find(r => fullId(r) === iddesa);
         let html = `
           <div class="popup-title">${capitalize(nmdesa)}</div>
           <div class="popup-row"><span class="popup-lbl">Kecamatan</span><span class="popup-val">${shortKec(nmkec)}</span></div>
@@ -722,9 +717,7 @@ function renderMap() {
     }
   }).addTo(map);
 
-  if (geoLayer.getBounds().isValid()) {
-    map.fitBounds(geoLayer.getBounds(), { padding: [8, 8] });
-  }
+  if (geoLayer.getBounds().isValid()) map.fitBounds(geoLayer.getBounds(), { padding: [8, 8] });
 }
 
 // ═══════════════════════════════════════════════════
@@ -740,10 +733,9 @@ function renderChart() {
     if (!kecMap[kec]) kecMap[kec] = { total: 0, done: 0 };
     kecMap[kec].total++;
   });
-  const doneSet = new Set(submissions.map(r => fullId(r)));
   geoData.features.forEach(f => {
     const kec = f.properties.nmkec || 'Lainnya';
-    if (doneSet.has(f.properties.iddesa)) kecMap[kec].done++;
+    if (doneSet.has(String(f.properties.iddesa))) kecMap[kec].done++;
   });
 
   // Filter if needed
@@ -876,7 +868,6 @@ function renderTable() {
     </tr>`;
 
     if (!geoData) return;
-    const doneSet = new Set(submissions.map(r => fullId(r)));
 
     let pending = geoData.features.filter(f => {
       if (doneSet.has(f.properties.iddesa)) return false;
